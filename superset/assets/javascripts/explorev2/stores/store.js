@@ -10,9 +10,9 @@ export function getFormDataFromFields(fieldsState) {
   return formData;
 }
 
-export function getFieldNames(vizType, datasourceType) {
+export function getFieldNames(vizType) {
   const fieldNames = [];
-  sectionsToRender(vizType, datasourceType).forEach(
+  sectionsToRender(vizType).forEach(
     section => section.fieldSetRows.forEach(
       fsr => fsr.forEach(
         f => fieldNames.push(f))));
@@ -32,7 +32,7 @@ export function getFieldsState(state, form_data) {
   const formData = Object.assign({}, form_data);
   const vizType = formData.viz_type || 'table';
 
-  const fieldNames = getFieldNames(vizType, state.datasource.type);
+  const fieldNames = getFieldNames(vizType);
 
   const viz = visTypes[vizType];
   const fieldOverrides = viz.fieldOverrides || {};
@@ -69,10 +69,9 @@ export function getFieldsState(state, form_data) {
 }
 
 export function applyDefaultFormData(form_data) {
-  const datasourceType = form_data.datasource.split('__')[1];
   const vizType = form_data.viz_type || 'table';
   const viz = visTypes[vizType];
-  const fieldNames = getFieldNames(vizType, datasourceType);
+  const fieldNames = getFieldNames(vizType);
   const fieldOverrides = viz.fieldOverrides || {};
   const formData = {};
   fieldNames.forEach(k => {

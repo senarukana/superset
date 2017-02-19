@@ -19,15 +19,14 @@ require('./main.css');
 const exploreViewContainer = document.getElementById('js-explore-view-container');
 const bootstrapData = JSON.parse(exploreViewContainer.getAttribute('data-bootstrap'));
 const fields = getFieldsState(bootstrapData, bootstrapData.form_data);
-delete bootstrapData.form_data;
 
 import { exploreReducer } from './reducers/exploreReducer';
 
 // Initial state
 const bootstrappedState = Object.assign(
   bootstrapData, {
-    chartStatus: 'loading',
-    chartUpdateEndTime: null,
+    chartStatus: bootstrapData.form_data["slice_id"] ? "loading": "stopped",
+    chartUpdateEndTime: bootstrapData.form_data["slice_id"] ? null: now(),
     chartUpdateStartTime: now(),
     dashboards: [],
     fields,
@@ -36,10 +35,12 @@ const bootstrappedState = Object.assign(
     isDatasourceMetaLoading: false,
     isStarred: false,
     queryResponse: null,
-    triggerQuery: true,
+    triggerQuery: bootstrapData.form_data["slice_id"] ? true: false,
     triggerRender: false,
   }
 );
+
+delete bootstrapData.form_data;
 
 const store = createStore(exploreReducer, bootstrappedState,
   compose(applyMiddleware(thunk), initEnhancer(false))

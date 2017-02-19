@@ -8,7 +8,7 @@ export function getInitialState(defaultDbId) {
   const defaultQueryEditor = {
     id: shortid.generate(),
     title: 'Untitled Query',
-    sql: 'SELECT *\nFROM\nWHERE',
+    sql: 'FROM\n WHERE\n SELECT',
     selectedText: null,
     latestQueryId: null,
     autorun: false,

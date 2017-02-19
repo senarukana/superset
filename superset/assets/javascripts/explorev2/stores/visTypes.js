@@ -1,4 +1,11 @@
 export const commonControlPanelSections = {
+  iqlTimeSeries: {
+    label: 'Time',
+    description: 'Time range',
+    fieldSetRows: [
+        ['since', 'until'],
+    ],
+  },
   druidTimeSeries: {
     label: 'Time',
     description: 'Time related form attributes',
@@ -12,7 +19,6 @@ export const commonControlPanelSections = {
     fieldSetRows: [
       ['datasource'],
       ['viz_type'],
-      ['slice_id'],
     ],
   },
   sqlaTimeSeries: {
@@ -24,17 +30,17 @@ export const commonControlPanelSections = {
     ],
   },
   sqlClause: {
-    label: 'SQL',
+    label: 'WHERE',
     fieldSetRows: [
       ['where'],
-      ['having'],
     ],
     description: 'This section exposes ways to include snippets of SQL in your query',
   },
   NVD3TimeSeries: [
     {
-      label: null,
+      label: "Query",
       fieldSetRows: [
+        ['groupby_time'],
         ['metrics'],
         ['groupby'],
         ['limit', 'timeseries_limit_metric'],
@@ -239,16 +245,8 @@ const visTypes = {
         ],
       },
       {
-        label: 'NOT GROUPED BY',
-        description: 'Use this section if you want to query atomic rows',
-        fieldSetRows: [
-          ['all_columns', 'order_by_cols'],
-        ],
-      },
-      {
         label: 'Options',
         fieldSetRows: [
-          ['table_timestamp_format'],
           ['row_limit', 'page_length'],
           ['include_search', 'table_filter'],
         ],
@@ -275,8 +273,8 @@ const visTypes = {
       {
         label: null,
         fieldSetRows: [
-          ['groupby', 'columns'],
-          ['metrics', 'pandas_aggfunc'],
+          ['groupby', 'metrics'],
+          ['pandas_aggfunc'],
         ],
       },
     ],
@@ -750,18 +748,16 @@ const visTypes = {
 
 export default visTypes;
 
-export function sectionsToRender(vizType, datasourceType) {
+export function sectionsToRender(vizType) {
   const viz = visTypes[vizType];
-  const timeSection = datasourceType === 'table' ?
-    commonControlPanelSections.sqlaTimeSeries : commonControlPanelSections.druidTimeSeries;
+  const timeSection = commonControlPanelSections.iqlTimeSeries;
   const { datasourceAndVizType, sqlClause, filters } = commonControlPanelSections;
-  const filtersToRender =
-    datasourceType === 'table' ? filters[0] : filters;
+  const filtersToRender = filters[0];
   return [].concat(
     datasourceAndVizType,
     timeSection,
-    viz.controlPanelSections,
     sqlClause,
+    viz.controlPanelSections,
     filtersToRender
   );
 }

@@ -125,10 +125,10 @@ class ChartContainer extends React.PureComponent {
       },
 
       data: {
-        csv_endpoint: getExploreUrl(this.props.formData, this.props.datasource_type, 'csv'),
-        json_endpoint: getExploreUrl(this.props.formData, this.props.datasource_type, 'json'),
+        csv_endpoint: getExploreUrl(this.props.formData, 'csv'),
+        json_endpoint: getExploreUrl(this.props.formData, 'json'),
         standalone_endpoint: getExploreUrl(
-          this.props.formData, this.props.datasource_type, 'standalone'),
+          this.props.formData, 'standalone'),
       },
 
     };
@@ -252,7 +252,7 @@ class ChartContainer extends React.PureComponent {
                   slice={this.state.mockSlice}
                   canDownload={this.props.can_download}
                   queryEndpoint={getExploreUrl(
-                    this.props.latestQueryFormData, this.props.datasource_type, 'query')}
+                    this.props.latestQueryFormData, 'query')}
                 />
               </div>
             </div>
@@ -283,7 +283,7 @@ function mapStateToProps(state) {
     queryResponse: state.queryResponse,
     slice: state.slice,
     standalone: state.standalone,
-    table_name: formData.datasource_name,
+    table_name: formData.datasource,
     viz_type: formData.viz_type,
     triggerRender: state.triggerRender,
   };

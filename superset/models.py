@@ -63,28 +63,10 @@ from superset.viz import viz_types
 from superset.jinja_context import get_template_processor
 from superset.utils import (
     flasher, MetricPermException, DimSelector, wrap_clause_in_parens,
-    DTTM_ALIAS, QueryStatus,
+    DTTM_ALIAS, QueryStatus, QueryResult
 )
 
 config = app.config
-
-
-class QueryResult(object):
-
-    """Object returned by the query interface"""
-
-    def __init__(  # noqa
-            self,
-            df,
-            query,
-            duration,
-            status=QueryStatus.SUCCESS,
-            error_message=None):
-        self.df = df
-        self.query = query
-        self.duration = duration
-        self.status = status
-        self.error_message = error_message
 
 
 FilterPattern = re.compile(r'''((?:[^,"']|"[^"]*"|'[^']*')+)''')
@@ -246,7 +228,7 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
     __tablename__ = 'slices'
     id = Column(Integer, primary_key=True)
     slice_name = Column(String(250))
-    datasource_id = Column(Integer)
+    # datasource_id = Column(Integer)
     datasource_type = Column(String(200))
     datasource_name = Column(String(2000))
     viz_type = Column(String(250))
@@ -266,34 +248,36 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
     def cls_model(self):
         return SourceRegistry.sources[self.datasource_type]
 
-    @property
-    def datasource(self):
-        return self.get_datasource
-
-    @datasource.getter
-    @utils.memoized
-    def get_datasource(self):
-        ds = db.session.query(
-            self.cls_model).filter_by(
-            id=self.datasource_id).first()
-        return ds
+    # @property
+    # def datasource(self):
+    #     return self.get_datasource
+    #
+    # @datasource.getter
+    # @utils.memoized
+    # def get_datasource(self):
+    #     ds = db.session.query(
+    #         self.cls_model).filter_by(
+    #         id=self.datasource_id).first()
+    #     return ds
 
     @renders('datasource_name')
     def datasource_link(self):
-        datasource = self.datasource
-        if datasource:
-            return self.datasource.link
+        # datasource = self.datasource
+        # if datasource:
+        #     return self.datasource.link
+        return None
 
     @property
     def datasource_edit_url(self):
-        self.datasource.url
+        return None
+        # self.datasource.url
 
     @property
     @utils.memoized
     def viz(self):
         d = json.loads(self.params)
         viz_class = viz_types[self.viz_type]
-        return viz_class(self.datasource, form_data=d)
+        return viz_class(form_data=d)
 
     @property
     def description_markeddown(self):
@@ -330,22 +314,18 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
         form_data = json.loads(self.params)
         form_data['slice_id'] = self.id
         form_data['viz_type'] = self.viz_type
-        form_data['datasource'] = (
-            str(self.datasource_id) + '__' + self.datasource_type)
         return form_data
 
     @property
     def slice_url(self):
         """Defines the url to access the slice"""
         return (
-            "/superset/explore/{obj.datasource_type}/"
-            "{obj.datasource_id}/?form_data={params}".format(
-                obj=self, params=parse.quote(json.dumps(self.form_data))))
+            "/superset/explore/?form_data={params}".format(params=parse.quote(json.dumps(self.form_data))))
 
     @property
     def slice_id_url(self):
         return (
-            "/superset/{slc.datasource_type}/{slc.datasource_id}/{slc.id}/"
+            "/superset/{slc.datasource_name}/{slc.id}/"
         ).format(slc=self)
 
     @property
@@ -375,7 +355,6 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
         slice_params['viz_type'] = self.viz_type if self.viz_type else "table"
 
         return viz_types[slice_params.get('viz_type')](
-            self.datasource,
             form_data=slice_params,
             slice_=self
         )
@@ -398,14 +377,14 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
         slc_to_override = None
         for slc in session.query(Slice).all():
             if ('remote_id' in slc.params_dict and
-                    slc.params_dict['remote_id'] == slc_to_import.id):
+                        slc.params_dict['remote_id'] == slc_to_import.id):
                 slc_to_override = slc
 
         slc_to_import = slc_to_import.copy()
         params = slc_to_import.params_dict
-        slc_to_import.datasource_id = SourceRegistry.get_datasource_by_name(
-            session, slc_to_import.datasource_type, params['datasource_name'],
-            params['schema'], params['database_name']).id
+        # slc_to_import.datasource_id = SourceRegistry.get_datasource_by_name(
+        #     session, slc_to_import.datasource_type, params['datasource_name'],
+        #     params['schema'], params['database_name']).id
         if slc_to_override:
             slc_to_override.override(slc_to_import)
             session.flush()
@@ -416,8 +395,8 @@ class Slice(Model, AuditMixinNullable, ImportMixin):
         return slc_to_import.id
 
 
-sqla.event.listen(Slice, 'before_insert', set_related_perm)
-sqla.event.listen(Slice, 'before_update', set_related_perm)
+# sqla.event.listen(Slice, 'before_insert', set_related_perm)
+# sqla.event.listen(Slice, 'before_update', set_related_perm)
 
 
 dashboard_slices = Table(
@@ -460,7 +439,7 @@ class Dashboard(Model, AuditMixinNullable, ImportMixin):
     @property
     def table_names(self):
         return ", ".join(
-            {"{}".format(s.datasource.name) for s in self.slices})
+            {"{}".format(s.datasource_name) for s in self.slices})
 
     @property
     def url(self):
@@ -468,7 +447,7 @@ class Dashboard(Model, AuditMixinNullable, ImportMixin):
 
     @property
     def datasources(self):
-        return {slc.datasource for slc in self.slices}
+        return {slc.datasource_name for slc in self.slices}
 
     @property
     def sqla_metadata(self):
@@ -1100,6 +1079,8 @@ class SqlMetric(Model, AuditMixinNullable, ImportMixin):
                 SqlMetric.table_id == lookup_metric.table_id,
                 SqlMetric.metric_name == lookup_metric.metric_name).first()
         return import_util.import_simple_obj(db.session, i_metric, lookup_obj)
+
+
 
 
 class SqlaTable(Model, Datasource, AuditMixinNullable, ImportMixin):

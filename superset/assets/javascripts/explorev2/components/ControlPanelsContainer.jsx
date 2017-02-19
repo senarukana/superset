@@ -11,7 +11,6 @@ import FieldSet from './FieldSet';
 import fields from '../stores/fields';
 
 const propTypes = {
-  datasource_type: PropTypes.string.isRequired,
   actions: PropTypes.object.isRequired,
   fields: PropTypes.object.isRequired,
   isDatasourceMetaLoading: PropTypes.bool.isRequired,
@@ -35,7 +34,7 @@ class ControlPanelsContainer extends React.Component {
     return this.props.fields[fieldName];
   }
   sectionsToRender() {
-    return sectionsToRender(this.props.form_data.viz_type, this.props.datasource_type);
+    return sectionsToRender(this.props.form_data.viz_type);
   }
   removeAlert() {
     this.props.actions.removeControlPanelAlert();

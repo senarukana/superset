@@ -3,11 +3,6 @@ const $ = window.$ = require('jquery');
 const FAVESTAR_BASE_URL = '/superset/favstar/slice';
 import { getExploreUrl } from '../exploreUtils';
 
-export const SET_DATASOURCE_TYPE = 'SET_DATASOURCE_TYPE';
-export function setDatasourceType(datasourceType) {
-  return { type: SET_DATASOURCE_TYPE, datasourceType };
-}
-
 export const SET_DATASOURCE = 'SET_DATASOURCE';
 export function setDatasource(datasource) {
   return { type: SET_DATASOURCE, datasource };
@@ -61,7 +56,7 @@ export function triggerQuery() {
 export function fetchDatasourceMetadata(datasourceKey, alsoTriggerQuery = false) {
   return function (dispatch) {
     dispatch(fetchDatasourceStarted());
-    const url = `/superset/fetch_datasource_metadata?datasourceKey=${datasourceKey}`;
+    const url = `/superset/fetch_datasource_metadata/${datasourceKey}`;
     $.ajax({
       type: 'GET',
       url,
@@ -229,9 +224,9 @@ export function updateChartStatus(status) {
 }
 
 export const RUN_QUERY = 'RUN_QUERY';
-export function runQuery(formData, datasourceType) {
+export function runQuery(formData) {
   return function (dispatch) {
-    const url = getExploreUrl(formData, datasourceType, 'json');
+    const url = getExploreUrl(formData, 'json');
     const queryRequest = $.getJSON(url, function (queryResponse) {
       dispatch(chartUpdateSucceeded(queryResponse));
     }).fail(function (err) {

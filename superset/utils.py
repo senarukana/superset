@@ -442,6 +442,23 @@ class QueryStatus:
     TIMED_OUT = 'timed_out'
 
 
+class QueryResult(object):
+
+    """Object returned by the query interface"""
+
+    def __init__(  # noqa
+            self,
+            df,
+            query,
+            duration,
+            status=QueryStatus.SUCCESS,
+            error_message=None):
+        self.df = df
+        self.query = query
+        self.duration = duration
+        self.status = status
+        self.error_message = error_message
+
 def notify_user_about_perm_udate(
         granter, user, role, datasource, tpl_name, config):
     msg = render_template(tpl_name, granter=granter, user=user, role=role,

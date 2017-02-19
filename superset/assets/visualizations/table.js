@@ -17,10 +17,12 @@ function tableVis(slice, payload) {
 
   const data = payload.data;
   const fd = slice.formData;
+
+  const fd_metrics = ['dumb'];
   // Removing metrics (aggregates) that are strings
   const realMetrics = [];
   for (const k in data.records[0]) {
-    if (fd.metrics.indexOf(k) > -1 && !isNaN(data.records[0][k])) {
+    if (fd_metrics.indexOf(k) > -1 && !isNaN(data.records[0][k])) {
       realMetrics.push(k);
     }
   }
@@ -118,9 +120,9 @@ function tableVis(slice, payload) {
       return (!d.isMetric) ? 'pointer' : '';
     })
     .html((d) => {
-      if (d.isMetric) {
-        return slice.d3format(d.col, d.val);
-      }
+      // if (d.isMetric) {
+      //   return slice.d3format(d.col, d.val);
+      // }
       return d.val;
     });
   const height = slice.height();
@@ -143,8 +145,8 @@ function tableVis(slice, payload) {
   fixDataTableBodyHeight(
       container.find('.dataTables_wrapper'), height);
   // Sorting table by main column
-  if (fd.metrics.length > 0) {
-    const mainMetric = fd.metrics[0];
+  if (fd_metrics.length > 0) {
+    const mainMetric = fd_metrics[0];
     datatable.column(data.columns.indexOf(mainMetric)).order('desc').draw();
   }
   container.parents('.widget').find('.tooltip').remove();

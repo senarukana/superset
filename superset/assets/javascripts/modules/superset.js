@@ -63,7 +63,8 @@ const px = function () {
     const container = $(selector);
     const sliceId = data.slice_id;
     const formData = applyDefaultFormData(data.form_data);
-    const jsonEndpoint = getExploreUrl(formData, 'table', 'json');
+    formData["slice_id"] = sliceId;
+    const jsonEndpoint = getExploreUrl(formData, 'json');
     const origJsonEndpoint = jsonEndpoint;
     let dttm = 0;
     const stopwatch = function () {
@@ -134,6 +135,7 @@ const px = function () {
         }
       },
       done(payload) {
+        console.log(payload);
         Object.assign(data, payload);
 
         clearInterval(timer);

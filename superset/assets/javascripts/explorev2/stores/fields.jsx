@@ -17,6 +17,8 @@ const D3_TIME_FORMAT_OPTIONS = [
 
 const ROW_LIMIT_OPTIONS = [10, 50, 100, 250, 500, 1000, 5000, 10000, 50000];
 
+const GROUP_BY_TIME_OPTIONS = ['1min', '1h', '1day', '1week', '1month', '1year', '5min', '10min', '15min', '30min', '6h', '12h']
+
 const SERIES_LIMITS = [0, 5, 10, 25, 50, 100, 500];
 
 export const TIME_STAMP_OPTIONS = [
@@ -33,7 +35,7 @@ export const fields = {
     label: 'Datasource',
     isLoading: true,
     clearable: false,
-    default: null,
+    default: "jobsearch",
     mapStateToProps: (state) => {
       const datasources = state.datasources || [];
       return {
@@ -65,7 +67,7 @@ export const fields = {
     multi: true,
     label: 'Metrics',
     validators: [v.nonEmpty],
-  default: field => field.choices && field.choices.length > 0 ? [field.choices[0][0]] : null,
+    default: ["counts"],
     mapStateToProps: (state) => ({
       choices: (state.datasource) ? state.datasource.metrics_combo : [],
     }),
@@ -104,6 +106,7 @@ export const fields = {
       choices: (state.datasource) ? state.datasource.metrics_combo : [],
     }),
   },
+
 
   stacked_style: {
     type: 'SelectField',
@@ -293,24 +296,13 @@ export const fields = {
     description: 'One or many fields to pivot as columns',
   },
 
-  all_columns: {
-    type: 'SelectField',
-    multi: true,
-    label: 'Columns',
-    default: [],
-    description: 'Columns to display',
-    mapStateToProps: (state) => ({
-      choices: (state.datasource) ? state.datasource.all_cols : [],
-    }),
-  },
-
   all_columns_x: {
     type: 'SelectField',
     label: 'X',
     default: null,
     description: 'Columns to display',
     mapStateToProps: (state) => ({
-      choices: (state.datasource) ? state.datasource.all_cols : [],
+      choices: (state.datasource) ? state.datasource.select : [],
     }),
   },
 
@@ -1171,6 +1163,14 @@ export const fields = {
         .concat(state.datasource.filterable_cols) : [],
       datasource: state.datasource,
     }),
+  },
+
+  groupby_time: {
+    type: 'SelectField',
+    freeForm: true,
+    label: 'Group By Time',
+    default: "1h",
+    choices: formatSelectOptions(GROUP_BY_TIME_OPTIONS),
   },
 
   slice_id: {

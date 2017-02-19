@@ -12,7 +12,6 @@ import { getFormDataFromFields } from '../stores/store';
 
 const propTypes = {
   actions: PropTypes.object.isRequired,
-  datasource_type: PropTypes.string.isRequired,
   chartStatus: PropTypes.string.isRequired,
   fields: PropTypes.object.isRequired,
   forcedHeight: PropTypes.string,
@@ -82,7 +81,7 @@ class ExploreViewContainer extends React.Component {
 
 
   runQuery() {
-    this.props.actions.runQuery(this.props.form_data, this.props.datasource_type);
+    this.props.actions.runQuery(this.props.form_data);
   }
 
   handleResize() {
@@ -159,7 +158,6 @@ class ExploreViewContainer extends React.Component {
             <ControlPanelsContainer
               actions={this.props.actions}
               form_data={this.props.form_data}
-              datasource_type={this.props.datasource_type}
             />
           </div>
           <div className="col-sm-8">
@@ -177,7 +175,6 @@ function mapStateToProps(state) {
   const form_data = getFormDataFromFields(state.fields);
   return {
     chartStatus: state.chartStatus,
-    datasource_type: state.datasource_type,
     fields: state.fields,
     form_data,
     standalone: state.standalone,
@@ -186,6 +183,7 @@ function mapStateToProps(state) {
     queryRequest: state.queryRequest,
   };
 }
+
 
 function mapDispatchToProps(dispatch) {
   return {

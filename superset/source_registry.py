@@ -1,5 +1,5 @@
 from sqlalchemy.orm import subqueryload
-
+import logging
 
 class SourceRegistry(object):
     """ Central Registry for all available datasource engines"""
@@ -17,6 +17,7 @@ class SourceRegistry(object):
 
     @classmethod
     def get_datasource(cls, datasource_type, datasource_id, session):
+        logging.info(">>> {}, {}".format(cls.sources, cls.sources[datasource_type]))
         return (
             session.query(cls.sources[datasource_type])
             .filter_by(id=datasource_id)

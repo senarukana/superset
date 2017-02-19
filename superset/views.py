@@ -13,6 +13,7 @@ import sys
 import time
 import traceback
 import zlib
+from iqlclient import dataframe
 
 import functools
 import sqlalchemy as sqla
@@ -42,6 +43,8 @@ from superset.utils import has_access
 from superset.source_registry import SourceRegistry
 from superset.models import DatasourceAccessRequest as DAR
 from superset.sql_parse import SupersetQuery
+
+from superset import iql
 
 config = app.config
 log_this = models.Log.log_this
@@ -1282,9 +1285,8 @@ class Superset(BaseSupersetView):
     @has_access_api
     @expose("/datasources/")
     def datasources(self):
-        datasources = SourceRegistry.get_all_datasources(db.session)
-        datasources = [(str(o.id) + '__' + o.type, repr(o)) for o in datasources]
-        return self.json_response(datasources)
+        datasources = ["jobsearch", "organic", "jobmobile"]
+        return self.json_response(utils.choicify(datasources))
 
     @has_access_api
     @expose("/override_role_permissions/", methods=['POST'])
@@ -1470,6 +1472,7 @@ class Superset(BaseSupersetView):
         if not form_data:
             form_data = '{}'
         d = json.loads(form_data)
+
         extra_filters = request.args.get("extra_filters")
         filters = d.get('filters', [])
         if extra_filters:
@@ -1477,39 +1480,27 @@ class Superset(BaseSupersetView):
             d['filters'] = filters + extra_filters
         return d
 
-    def get_viz(
-            self,
-            slice_id=None,
-            args=None,
-            datasource_type=None,
-            datasource_id=None):
+    def get_viz(self, slice_id=None):
         if slice_id:
             slc = (
                 db.session.query(models.Slice)
-                .filter_by(id=slice_id)
-                .one()
+                    .filter_by(id=slice_id)
+                    .one()
             )
             return slc.get_viz()
         else:
-            form_data=self.get_form_data()
+            form_data = self.get_form_data()
             viz_type = form_data.get('viz_type', 'table')
-            datasource = SourceRegistry.get_datasource(
-                datasource_type, datasource_id, db.session)
-            viz_obj = viz.viz_types[viz_type](
-                datasource,
-                form_data=form_data,
-            )
-            return viz_obj
+            return viz.viz_types[viz_type](form_data)
 
     @has_access
     @expose("/slice/<slice_id>/")
     def slice(self, slice_id):
         viz_obj = self.get_viz(slice_id)
         endpoint = (
-            '/superset/explore/{}/{}?form_data={}'
-            .format(
-                viz_obj.datasource.type,
-                viz_obj.datasource.id,
+            '/superset/explore/{}/?form_data={}'
+                .format(
+                viz_obj.datasource,
                 json.dumps(viz_obj.form_data)
             )
         )
@@ -1519,22 +1510,11 @@ class Superset(BaseSupersetView):
 
     @log_this
     @has_access_api
-    @expose("/explore_json/<datasource_type>/<datasource_id>/")
-    def explore_json(self, datasource_type, datasource_id):
-        try:
-            viz_obj = self.get_viz(
-                datasource_type=datasource_type,
-                datasource_id=datasource_id,
-                args=request.args)
-        except Exception as e:
-            logging.exception(e)
-            return json_error_response(
-                utils.error_msg_from_exception(e),
-                stacktrace=traceback.format_exc())
-
-
-        if not self.datasource_access(viz_obj.datasource):
-            return json_error_response(DATASOURCE_ACCESS_ERR, status=404)
+    @expose("/explore_json/")
+    def explore_iql_json(self):
+        form_data = self.get_form_data()
+        logging.info(">>> {}".format(form_data))
+        viz_obj = self.get_viz()
 
         if request.args.get("csv") == "true":
             return Response(
@@ -1546,20 +1526,13 @@ class Superset(BaseSupersetView):
         if request.args.get("query") == "true":
             try:
                 query_obj = viz_obj.query_obj()
-                engine = viz_obj.datasource.database.get_sqla_engine() \
-                    if datasource_type == 'table' \
-                    else viz_obj.datasource.cluster.get_pydruid_client()
-                if datasource_type == 'druid':
-                    # only retrive first phase query for druid
-                    query_obj['phase'] = 1
-                query = viz_obj.datasource.get_query_str(
-                    engine, datetime.now(), **query_obj)
+                query = iql.get_query_str(**query_obj)
             except Exception as e:
                 return json_error_response(e)
             return Response(
                 json.dumps({
                     'query': query,
-                    'language': viz_obj.datasource.query_language,
+                    'language': "sql",
                 }),
                 status=200,
                 mimetype="application/json")
@@ -1574,7 +1547,7 @@ class Superset(BaseSupersetView):
         status = 200
         if payload.get('status') == QueryStatus.FAILED:
             status = 400
-
+        logging.info(">>> payload: {}".format(payload))
         return json_success(viz_obj.json_dumps(payload), status=status)
 
     @expose("/import_dashboards", methods=['GET', 'POST'])
@@ -1602,83 +1575,44 @@ class Superset(BaseSupersetView):
 
     @log_this
     @has_access
-    @expose("/explore/<datasource_type>/<datasource_id>/")
-    def explore(self, datasource_type, datasource_id):
+    @expose("/explore/")
+    def explore(self):
         form_data = self.get_form_data()
-
-        datasource_id = int(datasource_id)
-        viz_type = form_data.get("viz_type")
-        slice_id = form_data.get('slice_id')
         user_id = g.user.get_id() if g.user else None
+        slice_id = form_data.get('slice_id')
+        datasource = form_data.get('datasource') or "jobsearch"
 
         slc = None
         if slice_id:
             slc = db.session.query(models.Slice).filter_by(id=slice_id).first()
-
-        error_redirect = '/slicemodelview/list/'
-        datasource = (
-            db.session.query(SourceRegistry.sources[datasource_type])
-            .filter_by(id=datasource_id)
-            .one()
-        )
-
-        if not datasource:
-            flash(DATASOURCE_MISSING_ERR, "danger")
-            return redirect(error_redirect)
-
-        if not self.datasource_access(datasource):
-            flash(
-                __(get_datasource_access_error_msg(datasource.name)),
-                "danger")
-            return redirect(
-                'superset/request_access/?'
-                'datasource_type={datasource_type}&'
-                'datasource_id={datasource_id}&'
-                ''.format(**locals()))
-
-        if not viz_type and datasource.default_endpoint:
-            return redirect(datasource.default_endpoint)
-
-        # slc perms
-        slice_add_perm = self.can_access('can_add', 'SliceModelView')
-        slice_overwrite_perm = is_owner(slc, g.user)
-        slice_download_perm = self.can_access('can_download', 'SliceModelView')
 
         # handle save or overwrite
         action = request.args.get('action')
         if action in ('saveas', 'overwrite'):
             return self.save_or_overwrite_slice(
                 request.args,
-                slc, slice_add_perm,
-                slice_overwrite_perm,
-                datasource_id,
-                datasource_type)
+                slc, True,
+                True,
+                datasource)
 
-        form_data['datasource'] = str(datasource_id) + '__' + datasource_type
         standalone = request.args.get("standalone") == "true"
         bootstrap_data = {
-            "can_add": slice_add_perm,
-            "can_download": slice_download_perm,
-            "can_overwrite": slice_overwrite_perm,
-            "datasource": datasource.data,
-            # TODO: separate endpoint for fetching datasources
+            "can_add": True,
+            "can_download": True,
+            "can_overwrite": is_owner(slc, g.user),
+            "datasource": iql.get_datasource(datasource),
             "form_data": form_data,
-            "datasource_id": datasource_id,
-            "datasource_type": datasource_type,
             "slice": slc.data if slc else None,
             "standalone": standalone,
             "user_id": user_id,
             "forced_height": request.args.get('height'),
         }
-        table_name = datasource.table_name \
-            if datasource_type == 'table' \
-            else datasource.datasource_name
         return self.render_template(
             "superset/explorev2.html",
             bootstrap_data=json.dumps(bootstrap_data),
-            slice=slc,
             standalone_mode=standalone,
-            table_name=table_name)
+            table_name=datasource)
+
 
     @api
     @has_access_api
@@ -1723,8 +1657,7 @@ class Superset(BaseSupersetView):
         return json_success(obj.get_values_for_column(column))
 
     def save_or_overwrite_slice(
-            self, args, slc, slice_add_perm, slice_overwrite_perm,
-            datasource_id, datasource_type):
+            self, args, slc, slice_add_perm, slice_overwrite_perm, datasource_name):
         """Save or overwrite a slice"""
         slice_name = args.get('slice_name')
         action = args.get('action')
@@ -1736,10 +1669,9 @@ class Superset(BaseSupersetView):
             slc = models.Slice(owners=[g.user] if g.user else [])
 
         slc.params = json.dumps(form_data)
-        slc.datasource_name = args.get('datasource_name')
         slc.viz_type = form_data['viz_type']
-        slc.datasource_type = datasource_type
-        slc.datasource_id = datasource_id
+        slc.datasource_type = "table"
+        slc.datasource_name = datasource_name
         slc.slice_name = slice_name
 
         if action in ('saveas') and slice_add_perm:
@@ -2248,16 +2180,16 @@ class Superset(BaseSupersetView):
             qry = qry.filter_by(slug=dashboard_id)
 
         dash = qry.one()
-        datasources = {slc.datasource for slc in dash.slices}
-        for datasource in datasources:
-            if not self.datasource_access(datasource):
-                flash(
-                    __(get_datasource_access_error_msg(datasource.name)),
-                    "danger")
-                return redirect(
-                    'superset/request_access/?'
-                    'dashboard_id={dash.id}&'
-                    ''.format(**locals()))
+        # datasources = {slc.datasource_name for slc in dash.slices}
+        # for datasource in datasources:
+        #     if not self.datasource_access(datasource):
+        #         flash(
+        #             __(get_datasource_access_error_msg(datasource.name)),
+        #             "danger")
+        #         return redirect(
+        #             'superset/request_access/?'
+        #             'dashboard_id={dash.id}&'
+        #             ''.format(**locals()))
 
         # Hack to log the dashboard_id properly, even when getting a slug
         @log_this
@@ -2335,6 +2267,71 @@ class Superset(BaseSupersetView):
     @expose("/sqllab_viz/", methods=['POST'])
     @log_this
     def sqllab_viz(self):
+        data = json.loads(request.form.get('data'))
+        table_name = data.get('datasourceName')
+        viz_type = data.get('chartType')
+        table = (
+            db.session.query(models.SqlaTable)
+                .filter_by(table_name=table_name)
+                .first()
+        )
+        if not table:
+            table = models.SqlaTable(table_name=table_name)
+        table.database_id = data.get('dbId')
+        table.sql = data.get('sql')
+        logging.info(">>> sqllab viz sql: {}".format(table.sql))
+        db.session.add(table)
+        cols = []
+        dims = []
+        metrics = []
+        for column_name, config in data.get('columns').items():
+            is_dim = config.get('is_dim', False)
+            col = models.TableColumn(
+                column_name=column_name,
+                filterable=is_dim,
+                groupby=is_dim,
+                is_dttm=config.get('is_date', False),
+            )
+            cols.append(col)
+            if is_dim:
+                dims.append(col)
+            agg = config.get('agg')
+            if agg:
+                if agg == 'count_distinct':
+                    metrics.append(models.SqlMetric(
+                        metric_name="{agg}__{column_name}".format(**locals()),
+                        expression="COUNT(DISTINCT {column_name})"
+                            .format(**locals()),
+                            ))
+                else:
+                    metrics.append(models.SqlMetric(
+                        metric_name="{agg}__{column_name}".format(**locals()),
+                        expression="{agg}({column_name})".format(**locals()),
+                    ))
+        if not metrics:
+            metrics.append(models.SqlMetric(
+                metric_name="count".format(**locals()),
+                expression="count(*)".format(**locals()),
+            ))
+        table.columns = cols
+        table.metrics = metrics
+        db.session.commit()
+        params = {
+            'viz_type': viz_type,
+            'groupby': dims[0].column_name if dims else None,
+            'metrics': metrics[0].metric_name if metrics else None,
+            'metric': metrics[0].metric_name if metrics else None,
+            'since': '100 years ago',
+            'limit': '0',
+        }
+        params = "&".join([k + '=' + v for k, v in params.items() if v])
+        return '/superset/explore/table/{table.id}/?{params}'.format(**locals())
+
+
+    @has_access
+    @expose("/sqllab_viz2/", methods=['POST'])
+    @log_this
+    def sqllab_viz2(self):
         data = json.loads(request.form.get('data'))
         table_name = data.get('datasourceName')
         viz_type = data.get('chartType')
@@ -2527,8 +2524,142 @@ class Superset(BaseSupersetView):
         return json_success(
             json.dumps(payload_json, default=utils.json_iso_dttm_ser))
 
-    @has_access_api
+    def strip_iql(self, iql):
+        return " ".join(iql.split())
+
+
+    def get_query_result(self, query_id):
+        session = db.session()
+        session.commit()  # HACK
+        query = session.query(models.Query).filter_by(id=query_id).one()
+
+        def handle_error(msg):
+            """Local method handling error while processing the SQL"""
+            query.error_message = msg
+            query.status = QueryStatus.FAILED
+            query.tmp_table_name = None
+            session.commit()
+            raise Exception(query.error_message)
+
+        executed_sql = self.strip_iql(query.sql)
+        query.executed_sql = executed_sql
+        query.select_sql = executed_sql
+        logging.info("Running query: {}".format(repr(executed_sql)))
+
+        try:
+            result = dataframe(executed_sql)
+        except Exception as e:
+            logging.exception(e)
+            handle_error(utils.error_msg_from_exception(e))
+
+        query.rows = len(result.values)
+        query.progress = 100
+        query.status = QueryStatus.SUCCESS
+        query.end_time = utils.now_as_float()
+        session.flush()
+
+        columns = []
+        for column_name in result:
+            if column_name == '':
+                column_name = 'count()'
+            columns.append({"name": column_name})
+
+        data = []
+        for row in result.values:
+            item = {}
+            for i, column_value in enumerate(row):
+                if column_value is None:
+                    column_value = ""
+                print("col: " + column_value)
+                item[columns[i]] = column_value
+            data.append(item)
+        logging.info("Columns: {}".format(columns))
+        logging.info("Data: {}".format(data))
+        payload = {
+            'query_id': query_id,
+            'columns': columns,
+            'data': data,
+            'status': query.status,
+            'query': query.to_dict(),
+        }
+        session.flush()
+        session.commit()
+        return json.dumps(payload, default=utils.json_iso_dttm_ser)
+
     @expose("/sql_json/", methods=['POST', 'GET'])
+    @log_this
+    def iql_json(self):
+        sql = request.form.get('sql')
+        session = db.session()
+
+        query = models.Query(
+            database_id=1,
+            limit=int(app.config.get('SQL_MAX_ROW', None)),
+            sql=sql,
+            executed_sql=self.strip_iql(sql),
+            select_sql=self.strip_iql(sql),
+            select_as_cta=request.form.get('select_as_cta') == 'true',
+            start_time=utils.now_as_float(),
+            tab_name=request.form.get('tab'),
+            status=QueryStatus.SUCCESS,
+            sql_editor_id=request.form.get('sql_editor_id'),
+            user_id=int(g.user.get_id()),
+            client_id=request.form.get('client_id'),
+            progress=100,
+            rows=65,
+        )
+
+        session.add(query)
+        session.commit()
+
+        update_query = session.query(models.Query).filter_by(id=query.id).one()
+        update_query.end_time = utils.now_as_float()
+        session.commit()
+
+        # data = self.query_iql(query.id)
+        data = {"status": "success",
+                "data": [{"country": "ae", "COUNT": 1077512}, {"country": "aq", "COUNT": 738805},
+                         {"country": "ar", "COUNT": 1028977}, {"country": "at", "COUNT": 1077605},
+                         {"country": "au", "COUNT": 2077625}, {"country": "be", "COUNT": 2004089},
+                         {"country": "bh", "COUNT": 769047}, {"country": "br", "COUNT": 1784360},
+                         {"country": "ca", "COUNT": 4438126}, {"country": "ch", "COUNT": 1500435},
+                         {"country": "cl", "COUNT": 970750}, {"country": "cn", "COUNT": 1150878},
+                         {"country": "co", "COUNT": 994035}, {"country": "cr", "COUNT": 748244},
+                         {"country": "cz", "COUNT": 1025179}, {"country": "de", "COUNT": 2318432},
+                         {"country": "dk", "COUNT": 800825}, {"country": "ec", "COUNT": 746894},
+                         {"country": "eg", "COUNT": 750647}, {"country": "es", "COUNT": 1444667},
+                         {"country": "fi", "COUNT": 803202}, {"country": "fr", "COUNT": 3982788},
+                         {"country": "gb", "COUNT": 17199899}, {"country": "gr", "COUNT": 815273},
+                         {"country": "hk", "COUNT": 939374}, {"country": "hu", "COUNT": 863780},
+                         {"country": "id", "COUNT": 924722}, {"country": "ie", "COUNT": 1515240},
+                         {"country": "il", "COUNT": 834654}, {"country": "in", "COUNT": 2318442},
+                         {"country": "it", "COUNT": 2515908}, {"country": "jp", "COUNT": 3489341},
+                         {"country": "kr", "COUNT": 1530602}, {"country": "kw", "COUNT": 766617},
+                         {"country": "lu", "COUNT": 774284}, {"country": "ma", "COUNT": 754766},
+                         {"country": "mx", "COUNT": 2221085}, {"country": "my", "COUNT": 917923},
+                         {"country": "ng", "COUNT": 755129}, {"country": "nl", "COUNT": 2658805},
+                         {"country": "no", "COUNT": 799391}, {"country": "nz", "COUNT": 957095},
+                         {"country": "om", "COUNT": 765430}, {"country": "pa", "COUNT": 746119},
+                         {"country": "pe", "COUNT": 942670}, {"country": "ph", "COUNT": 961177},
+                         {"country": "pk", "COUNT": 809341}, {"country": "pl", "COUNT": 1544003},
+                         {"country": "pt", "COUNT": 874690}, {"country": "qa", "COUNT": 790724},
+                         {"country": "ro", "COUNT": 830648}, {"country": "ru", "COUNT": 2394731},
+                         {"country": "sa", "COUNT": 832848}, {"country": "se", "COUNT": 977028},
+                         {"country": "sg", "COUNT": 1046790}, {"country": "th", "COUNT": 878829},
+                         {"country": "tr", "COUNT": 1114746}, {"country": "tw", "COUNT": 973538},
+                         {"country": "ua", "COUNT": 802387}, {"country": "us", "COUNT": 23230737},
+                         {"country": "uy", "COUNT": 743734}, {"country": "ve", "COUNT": 787063},
+                         {"country": "vn", "COUNT": 1325428}, {"country": "za", "COUNT": 1779892}], "query_id": 33,
+                "columns": [{"name": "country"}, {"name": "COUNT"}],
+                "query": update_query.to_dict()}
+        return Response(
+            json.dumps(data, default=utils.json_iso_dttm_ser),
+            status=200,
+            mimetype="application/json"
+        )
+
+    @has_access_api
+    @expose("/sql_json2/", methods=['POST', 'GET'])
     @log_this
     def sql_json(self):
         """Runs arbitrary sql and returns and json"""
@@ -2628,7 +2759,7 @@ class Superset(BaseSupersetView):
             csv = df.to_csv(index=False, encoding='utf-8')
         else:
             sql = query.select_sql or query.executed_sql
-            df = query.database.get_df(sql, query.schema)
+            df = dataframe(sql)
             # TODO(bkyryliuk): add compression=gzip for big files.
             csv = df.to_csv(index=False, encoding='utf-8')
         response = Response(csv, mimetype='text/csv')
@@ -2636,27 +2767,46 @@ class Superset(BaseSupersetView):
             'attachment; filename={}.csv'.format(query.name))
         return response
 
+
+    # @has_access
+    # @expose("/csv/<client_id>")
+    # @log_this
+    # def csv(self, client_id):
+    #     """Download the query results as csv."""
+    #     query = (
+    #         db.session.query(models.Query)
+    #         .filter_by(client_id=client_id)
+    #         .one()
+    #     )
+    #
+    #     rejected_tables = self.rejected_datasources(
+    #         query.sql, query.database, query.schema)
+    #     if rejected_tables:
+    #         flash(get_datasource_access_error_msg('{}'.format(rejected_tables)))
+    #         return redirect('/')
+    #     blob = None
+    #     if results_backend and query.results_key:
+    #         blob = results_backend.get(query.results_key)
+    #     if blob:
+    #         json_payload = zlib.decompress(blob)
+    #         obj = json.loads(json_payload)
+    #         df = pd.DataFrame.from_records(obj['data'])
+    #         csv = df.to_csv(index=False, encoding='utf-8')
+    #     else:
+    #         sql = query.select_sql or query.executed_sql
+    #         df = query.database.get_df(sql, query.schema)
+    #         # TODO(bkyryliuk): add compression=gzip for big files.
+    #         csv = df.to_csv(index=False, encoding='utf-8')
+    #     response = Response(csv, mimetype='text/csv')
+    #     response.headers['Content-Disposition'] = (
+    #         'attachment; filename={}.csv'.format(query.name))
+    #     return response
+
     @has_access
-    @expose("/fetch_datasource_metadata")
+    @expose("/fetch_datasource_metadata/<datasource>")
     @log_this
-    def fetch_datasource_metadata(self):
-        datasource_id, datasource_type = (
-            request.args.get('datasourceKey').split('__'))
-        datasource_class = SourceRegistry.sources[datasource_type]
-        datasource = (
-            db.session.query(datasource_class)
-            .filter_by(id=int(datasource_id))
-            .first()
-        )
-
-        # Check if datasource exists
-        if not datasource:
-            return json_error_response(DATASOURCE_MISSING_ERR)
-
-        # Check permission for datasource
-        if not self.datasource_access(datasource):
-            return json_error_response(DATASOURCE_ACCESS_ERR)
-        return json_success(json.dumps(datasource.data))
+    def fetch_datasource_metadata(self, datasource):
+        return json_success(json.dumps(iql.get_datasource(datasource)))
 
     @has_access
     @expose("/queries/<last_updated_ms>")

@@ -804,12 +804,12 @@
       "default": [],
       "description": "One or many fields to pivot as columns"
     },
-    "all_columns": {
+    "select": {
       "type": "SelectField",
       "multi": true,
-      "label": "Columns",
+      "label": "SELECT",
       "default": [],
-      "description": "Columns to display"
+      "description": "fields to select"
     },
     "all_columns_x": {
       "type": "SelectField",
@@ -1524,13 +1524,13 @@
     },
     "where": {
       "type": "TextField",
-      "label": "Custom WHERE clause",
+      "label": "WHERE clause",
       "default": "",
       "description": "The text in this box gets included in your query's WHERE clause, as an AND to other criteria. You can include complex expression, parenthesis and anything else supported by the backend it is directed towards."
     },
     "having": {
       "type": "TextField",
-      "label": "Custom HAVING clause",
+      "label": "HAVING clause",
       "default": "",
       "description": "The text in this box gets included in your query's HAVING clause, as an AND to other criteria. You can include complex expression, parenthesis and anything else supported by the backend it is directed towards."
     },
